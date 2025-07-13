@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,10 +9,10 @@ import { Label } from "@/components/ui/label"
 import { BookOpen, Lock } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { getUsers, setCurrentUser } from "@/lib/store"
+import { login } from "@/lib/auth" 
 
 export default function LoginPage() {
-  const [credentials, setCredentials] = useState({ username: "", password: "" })
+  const [credentials, setCredentials] = useState({ email: "", password: "" })
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -24,19 +23,16 @@ export default function LoginPage() {
     setError("")
 
     try {
-      const users = getUsers()
-      const user = users.find((u) => u.username === credentials.username && u.password === credentials.password)
-
-      if (user) {
-        setCurrentUser(user)
-        localStorage.setItem("adminLoggedIn", "true")
-        alert(`مرحباً ${user.name}!`)
-        router.push("/")
+      await login(credentials.email, credentials.password)
+      alert("تم تسجيل الدخول بنجاح!")
+      localStorage.setItem("adminLoggedIn", "true")
+      router.push("/admin/dashboard")
+    } catch (error: any) {
+      if (error.code === "auth/user-not-found" || error.code === "auth/wrong-password") {
+        setError("البريد الإلكتروني أو كلمة المرور غير صحيحة")
       } else {
-        setError("اسم المستخدم أو كلمة المرور غير صحيحة")
+        setError("حدث خطأ أثناء تسجيل الدخول")
       }
-    } catch (error) {
-      setError("حدث خطأ أثناء تسجيل الدخول")
     } finally {
       setIsLoading(false)
     }
@@ -59,13 +55,13 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">اسم المستخدم</Label>
+              <Label htmlFor="email">البريد الإلكتروني</Label>
               <Input
-                id="username"
-                type="text"
-                placeholder="أدخل اسم المستخدم"
-                value={credentials.username}
-                onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+                id="email"
+                type="email"
+                placeholder="أدخل البريد الإلكتروني"
+                value={credentials.email}
+                onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
                 className="text-right"
                 required
               />

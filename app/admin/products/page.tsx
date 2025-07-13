@@ -12,6 +12,7 @@ import { BookOpen, Plus, Edit, Trash2, Search, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { getProducts, saveProducts, type Product } from "@/lib/store"
+import { getMenus, MenuItem } from "@/lib/menus"
 
 export default function AdminProducts() {
   const router = useRouter()
@@ -19,6 +20,7 @@ export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("الكل")
+  const [categories, setCategories] = useState<string[]>(["الكل"])
 
   useEffect(() => {
     const loggedIn = localStorage.getItem("adminLoggedIn")
@@ -26,7 +28,17 @@ export default function AdminProducts() {
       router.push("/admin")
     } else {
       setIsAuthenticated(true)
-      setProducts(getProducts())
+      // Fetch menus from Firestore and set categories
+      getMenus().then((menus: MenuItem[]) => {
+        // Only top-level menus (no parentId)
+        const menuCategories = Array.from(
+          new Set(menus.filter(menu => !menu.parentId).map(menu => menu.name))
+        )
+        setCategories(["الكل", ...menuCategories])
+      })
+      // Optionally, fetch products from Firestore as well
+      // getProductsFromFirestore().then(setProducts)
+      setProducts(getProducts()) // If you still use local products
     }
   }, [router])
 
@@ -44,8 +56,6 @@ export default function AdminProducts() {
     const matchesCategory = categoryFilter === "الكل" || product.category === categoryFilter
     return matchesSearch && matchesCategory
   })
-
-  const categories = ["الكل", "أدوات مكتبية", "كتب", "ألعاب"]
 
   if (!isAuthenticated) {
     return <div>جاري التحميل...</div>

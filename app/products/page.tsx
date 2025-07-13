@@ -34,7 +34,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [favorites, setFavorites] = useState<number[]>([])
-  const [categories, setCategories] = useState(getCategories())
+  const [categories, setCategories] = useState<{ name: string; subcategories: string[] }[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState(categoryParam || "الكل")
   const [selectedSubcategory, setSelectedSubcategory] = useState("الكل")
@@ -48,25 +48,39 @@ export default function ProductsPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    const loadData = () => {
-      setProducts(getProducts())
-      setCart(getCart())
-      setFavorites(getFavorites())
-    }
+    // Fetch products and menus from Firestore
+    const fetchData = async () => {
+      // Dynamic imports to avoid SSR issues
+      const [{ getProductsFromFirestore }, { getMenus, MenuItem }] = await Promise.all([
+        import("@/lib/products"),
+        import("@/lib/menus")
+      ]);
+      const firestoreProducts = await getProductsFromFirestore();
+      setProducts(firestoreProducts);
 
-    loadData()
+      const menus: typeof MenuItem[] = await getMenus();
+      // Only top-level menus (no parentId)
+      const cats = menus
+        .filter(menu => !menu.parentId)
+        .map(menu => ({
+          name: menu.name,
+          subcategories: Array.isArray(menu.subcategories)
+            ? menu.subcategories
+            : menus.filter(sub => sub.parentId === menu.id).map(sub => sub.name),
+        }));
+      setCategories(cats);
+    };
+    fetchData();
 
-    const handleProductsUpdate = () => setProducts(getProducts())
-    const handleCartUpdate = () => setCart(getCart())
+    setCart(getCart());
+    setFavorites(getFavorites());
 
-    window.addEventListener("productsUpdated", handleProductsUpdate)
-    window.addEventListener("cartUpdated", handleCartUpdate)
-
+    const handleCartUpdate = () => setCart(getCart());
+    window.addEventListener("cartUpdated", handleCartUpdate);
     return () => {
-      window.removeEventListener("productsUpdated", handleProductsUpdate)
-      window.removeEventListener("cartUpdated", handleCartUpdate)
-    }
-  }, [])
+      window.removeEventListener("cartUpdated", handleCartUpdate);
+    };
+  }, []);
 
   // استبدال دالة addToCart
   const addToCart = (product: Product) => {
@@ -332,6 +346,8 @@ export default function ProductsPage() {
                 }
               >
                 {filteredProducts.map((product) => (
+                                        <Link href={`/products/${product.id}`}>
+
                   <Card
                     key={product.id}
                     className={`hover:shadow-lg transition-shadow ${viewMode === "list" ? "flex flex-row" : ""}`}
@@ -359,9 +375,7 @@ export default function ProductsPage() {
                       <div className="text-sm text-gray-500 mb-1">
                         {product.category} {product.subcategory && `- ${product.subcategory}`}
                       </div>
-                      <Link href={`/products/${product.id}`}>
                         <h4 className="font-semibold mb-2 text-right hover:text-blue-600 transition-colors">{product.name}</h4>
-                      </Link>
                       {viewMode === "list" && (
                         <p className="text-sm text-gray-600 mb-3 text-right">{product.description}</p>
                       )}
@@ -388,17 +402,12 @@ export default function ProductsPage() {
                           <ShoppingCart className="h-4 w-4 ml-2" />
                           {product.inStock ? "أضف للسلة" : "غير متوفر"}
                         </Button>
-                        <Button
-                          variant={favorites.includes(product.id) ? "default" : "outline"}
-                          size="sm"
-                          className="px-3"
-                          onClick={() => toggleFavorite(product.id)}
-                        >
-                          <Heart className={`h-4 w-4 ${favorites.includes(product.id) ? "fill-current" : ""}`} />
-                        </Button>
+
                       </div>
                     </CardContent>
                   </Card>
+
+                  </Link>
                 ))}
               </div>
             )}

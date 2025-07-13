@@ -12,16 +12,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { BookOpen, ArrowLeft, Plus, Edit, Trash2, Menu, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { getMenus, saveMenus as storeMenus } from "@/lib/store"
-
-interface MenuItem {
-  id: number
-  name: string
-  url: string
-  parentId?: number
-  order: number
-  isActive: boolean
-}
+import {
+  getMenus as fetchMenus,
+  saveMenus as saveMenusToFirestore,
+  addMenu,
+  updateMenu,
+  deleteMenu,
+  MenuItem,
+} from "@/lib/menus"
 
 export default function MenusManagement() {
   const router = useRouter()
@@ -36,6 +34,7 @@ export default function MenusManagement() {
     parentId: "",
     order: "1",
     isActive: true,
+    iconUrl: "", // <-- add this
   })
 
   useEffect(() => {
@@ -50,72 +49,65 @@ export default function MenusManagement() {
     }
   }, [router])
 
-  const loadMenus = () => {
+  const loadMenus = async () => {
     try {
-      const savedMenus = getMenus()
-      setMenus(savedMenus)
+      const savedMenus = await fetchMenus();
+      setMenus(savedMenus);
+      console.log("Menus loaded:", savedMenus);
     } catch (error) {
-      console.error('Failed to load menus:', error)
-      // استخدام القوائم الافتراضية في حالة الفشل
-      const defaultMenus: MenuItem[] = [
-        { id: 1, name: "الرئيسية", url: "/", order: 1, isActive: true },
-        { id: 2, name: "المنتجات", url: "/products", order: 2, isActive: true },
-        { id: 3, name: "الكتب", url: "/products?category=كتب", parentId: 2, order: 1, isActive: true },
-        { id: 4, name: "الألعاب", url: "/products?category=ألعاب", parentId: 2, order: 2, isActive: true },
-        { id: 5, name: "أدوات مكتبية", url: "/products?category=أدوات مكتبية", parentId: 2, order: 3, isActive: true },
-        { id: 6, name: "اتصل بنا", url: "/contact", order: 3, isActive: true },
-        { id: 7, name: "المنتدى", url: "/forum", order: 4, isActive: true },
-      ]
-      setMenus(defaultMenus)
+      console.error('Failed to load menus:', error);
+      setMenus([]);
     }
-  }
+  };
 
-  const saveMenusData = (updatedMenus: MenuItem[]) => {
-    setMenus(updatedMenus)
-    
+  const saveMenusData = async (updatedMenus: MenuItem[]) => {
+    setMenus(updatedMenus);
     try {
-      storeMenus(updatedMenus)
+      await saveMenusToFirestore(updatedMenus);
     } catch (error) {
-      console.error("Failed to save menus:", error)
-      // حفظ محلي كبديل
-      if (typeof window !== "undefined") {
-        localStorage.setItem("menus", JSON.stringify(updatedMenus))
-      }
+      console.error("Failed to save menus:", error);
     }
-  }
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
     const newMenu: MenuItem = {
       id: editingMenu ? editingMenu.id : Math.max(...menus.map(m => m.id), 0) + 1,
       name: formData.name,
       url: formData.url,
-      parentId: formData.parentId ? Number(formData.parentId) : undefined,
       order: Number(formData.order),
       isActive: formData.isActive,
+      iconUrl: formData.iconUrl && formData.iconUrl.trim() !== "" ? formData.iconUrl : undefined,
+    };
+
+    // Only add parentId if it is set and not "0"
+    if (formData.parentId && formData.parentId !== "0") {
+      newMenu.parentId = Number(formData.parentId);
     }
 
-    let updatedMenus: MenuItem[]
+    let updatedMenus: MenuItem[];
     if (editingMenu) {
-      updatedMenus = menus.map(m => m.id === editingMenu.id ? newMenu : m)
+      updatedMenus = menus.map(m => m.id === editingMenu.id ? newMenu : m);
+      await updateMenu(newMenu);
       toast({
         title: "تم بنجاح ✅",
         description: "تم تحديث القائمة بنجاح",
         variant: "success",
-      })
+      });
     } else {
-      updatedMenus = [...menus, newMenu]
+      updatedMenus = [...menus, newMenu];
+      await addMenu(newMenu);
       toast({
         title: "تم بنجاح ✅",
         description: "تم إضافة القائمة بنجاح",
         variant: "success",
-      })
+      });
     }
 
-    saveMenusData(updatedMenus)
-    resetForm()
-    setIsDialogOpen(false)
+    setMenus(updatedMenus);
+    resetForm();
+    setIsDialogOpen(false);
   }
 
   const handleEdit = (menu: MenuItem) => {
@@ -126,20 +118,21 @@ export default function MenusManagement() {
       parentId: menu.parentId?.toString() || "",
       order: menu.order.toString(),
       isActive: menu.isActive,
+      iconUrl: menu.iconUrl || "",
     })
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (menuId: number) => {
+  const handleDelete = async (menuId: number) => {
     if (confirm("هل أنت متأكد من حذف هذه القائمة؟")) {
-      // حذف القائمة والقوائم الفرعية التابعة لها
-      const updatedMenus = menus.filter(m => m.id !== menuId && m.parentId !== menuId)
-      saveMenusData(updatedMenus)
+      const updatedMenus = menus.filter(m => m.id !== menuId && m.parentId !== menuId);
+      await deleteMenu(menuId);
+      setMenus(updatedMenus);
       toast({
         title: "تم بنجاح ✅",
         description: "تم حذف القائمة بنجاح",
         variant: "success",
-      })
+      });
     }
   }
 
@@ -150,6 +143,7 @@ export default function MenusManagement() {
       parentId: "",
       order: "1",
       isActive: true,
+      iconUrl: "",
     })
     setEditingMenu(null)
   }
@@ -223,12 +217,15 @@ export default function MenusManagement() {
 
                   <div className="space-y-2">
                     <Label htmlFor="parentId">القائمة الرئيسية</Label>
-                    <Select value={formData.parentId} onValueChange={(value) => handleChange("parentId", value)}>
+                    <Select
+                      value={formData.parentId}
+                      onValueChange={(value) => handleChange("parentId", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="اختر القائمة الرئيسية (اختياري)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">لا يوجد (قائمة رئيسية)</SelectItem>
+                        <SelectItem value="0">لا يوجد (قائمة رئيسية)</SelectItem>
                         {mainMenus.map((menu) => (
                           <SelectItem key={menu.id} value={menu.id.toString()}>
                             {menu.name}
@@ -248,6 +245,17 @@ export default function MenusManagement() {
                       className="text-right"
                       min="1"
                       required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="iconUrl">رابط أيقونة (اختياري)</Label>
+                    <Input
+                      id="iconUrl"
+                      value={formData.iconUrl}
+                      onChange={(e) => handleChange("iconUrl", e.target.value)}
+                      className="text-right"
+                      placeholder="https://example.com/icon.png"
                     />
                   </div>
 

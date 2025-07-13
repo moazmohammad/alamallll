@@ -38,7 +38,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const loggedIn = localStorage.getItem("adminLoggedIn")
-    if (!loggedIn || !currentUser) {
+    if (!loggedIn) {
       router.push("/admin")
     } else {
       setIsAuthenticated(true)

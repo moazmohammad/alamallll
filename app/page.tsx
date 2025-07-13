@@ -19,6 +19,7 @@ import {
   type Product,
   type CartItem,
 } from "@/lib/store"
+import { getMenus, MenuItem } from "@/lib/menus"
 
 // استبدال alert بـ toast في دالة addToCart
 import { useToast } from "@/hooks/use-toast"
@@ -26,17 +27,24 @@ import { useToast } from "@/hooks/use-toast"
 // إضافة أيقونات الفيسبوك والواتساب في الفوتر
 import { Facebook, MessageCircle } from "lucide-react"
 
-const categories = [
-  { name: "أدوات مكتبية", icon: PenTool, count: 150 },
-  { name: "كتب", icon: BookOpen, count: 300 },
-  { name: "ألعاب", icon: Gamepad2, count: 80 },
-]
+// Icon mapping for menu names
+const iconMap: Record<string, any> = {
+  "أدوات مكتبية": PenTool,
+  "كتب": BookOpen,
+  // Add more mappings if you add more menu categories
+}
+
 
 export default function HomePage() {
   const [products, setProducts] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [favorites, setFavorites] = useState<number[]>([])
   const [currentUser, setCurrentUserState] = useState(getCurrentUser())
+  const [categories, setCategories] = useState<{
+    iconUrl: any; name: string; icon: any; count: number 
+}[]>([])
+
+  console.log("Current User:", categories)
 
   // في بداية المكون
   const { toast } = useToast()
@@ -70,6 +78,28 @@ export default function HomePage() {
       window.removeEventListener('cartUpdated', handleCartUpdate)
     }
   }, [])
+
+  // Fetch menus and build categories
+  useEffect(() => {
+    // Fetch menus and build categories
+    getMenus().then((menus: MenuItem[]) => {
+      // Only top-level menus (no parentId)
+      const topMenus = menus.filter(menu => !menu.parentId)
+      // Count products per category (optional, fallback to 0)
+      const productCounts: Record<string, number> = {}
+      products.forEach(product => {
+        productCounts[product.category] = (productCounts[product.category] || 0) + 1
+      })
+      setCategories(
+        topMenus.map(menu => ({
+          name: menu.name,
+          icon: iconMap[menu.name] || BookOpen,
+          iconUrl: menu.iconUrl && menu.iconUrl.trim() !== "" ? menu.iconUrl : undefined,
+          count: productCounts[menu.name] || 0,
+        }))
+      )
+    })
+  }, [products])
 
   // استبدال دالة addToCart
   const addToCart = (product: Product) => {
@@ -219,7 +249,16 @@ export default function HomePage() {
               <Link key={index} href={`/products?category=${encodeURIComponent(category.name)}`}>
                 <Card className="hover:shadow-lg transition-shadow cursor-pointer hover:scale-105 transform duration-200">
                   <CardHeader className="text-center">
-                    <category.icon className="h-10 w-10 md:h-12 md:w-12 mx-auto text-blue-600 mb-4" />
+                    {category.iconUrl ? (
+                      <img
+                        src={category.iconUrl}
+                        alt={category.name}
+                        className="mx-auto mb-4"
+                        style={{ width: 48, height: 48, objectFit: "contain" }}
+                      />
+                    ) : (
+                      <category.icon className="h-10 w-10 md:h-12 md:w-12 mx-auto text-blue-600 mb-4" />
+                    )}
                     <CardTitle className="text-lg md:text-xl">{category.name}</CardTitle>
                     <CardDescription>{category.count} منتج</CardDescription>
                   </CardHeader>
@@ -238,11 +277,12 @@ export default function HomePage() {
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {featuredProducts.map((product) => (
-              <Card key={product.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="p-0">
-                  <div className="relative">
-                    <Image
-                      src={product.image || "/placeholder.svg"}
+              <Link key={product.id} href={`/products/${product.id}`}>
+                <Card key={product.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="p-0">
+                    <div className="relative">
+                      <Image
+                        src={product.image || "/placeholder.svg"}
                       alt={product.name}
                       width={200}
                       height={200}
@@ -296,6 +336,7 @@ export default function HomePage() {
                   </div>
                 </CardContent>
               </Card>
+              </Link>
             ))}
           </div>
         </div>

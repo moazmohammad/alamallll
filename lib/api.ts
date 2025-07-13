@@ -299,16 +299,6 @@ export async function saveCoupons(coupons: Coupon[]): Promise<boolean> {
   return await databaseAPI.updateData(data)
 }
 
-export async function getMenus(): Promise<any[]> {
-  const data = await databaseAPI.getData()
-  return data.menus || []
-}
-
-export async function saveMenus(menus: any[]): Promise<boolean> {
-  const data = await databaseAPI.getData()
-  data.menus = menus
-  return await databaseAPI.updateData(data)
-}
 
 // دالة للتحديث الفوري عبر WebSocket simulation
 export function setupRealTimeUpdates() {

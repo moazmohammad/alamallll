@@ -10,14 +10,15 @@ import Link from "next/link"
 import Image from "next/image"
 import { useParams } from "next/navigation"
 import {
-  getProducts,
   getCart,
   saveCart,
   getFavorites,
   saveFavorites,
-  type Product,
   type CartItem,
 } from "@/lib/store"
+import { doc, getDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
+import type { Product } from "@/lib/products"
 import { useToast } from "@/hooks/use-toast"
 
 export default function ProductDetailPage() {
@@ -32,37 +33,33 @@ export default function ProductDetailPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    const loadData = () => {
-      const allProducts = getProducts()
-      const foundProduct = allProducts.find((p) => p.id === productId)
-      setProduct(foundProduct || null)
-      setCart(getCart())
-      setFavorites(getFavorites())
-      if (foundProduct && foundProduct.images && foundProduct.images.length > 0) {
-        setMainImage(foundProduct.images[0])
-      } else if (foundProduct && foundProduct.image) {
-        setMainImage(foundProduct.image)
+    const loadData = async () => {
+      // Fetch product from Firestore
+      const docRef = doc(db, "products", productId.toString());
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const foundProduct = docSnap.data() as Product;
+        setProduct(foundProduct);
+        if (foundProduct.image) {
+          setMainImage(foundProduct.image);
+        }
+      } else {
+        setProduct(null);
       }
-    }
+      setCart(getCart());
+      setFavorites(getFavorites());
+    };
+    loadData();
 
-    loadData()
-
-    const handleDataUpdate = () => {
-      setProduct(getProducts().find((p) => p.id === productId) || null)
-      setCart(getCart())
-      setFavorites(getFavorites())
-    }
-
-    window.addEventListener("productsUpdated", handleDataUpdate)
-    window.addEventListener("cartUpdated", handleDataUpdate)
-    window.addEventListener("favoritesUpdated", handleDataUpdate)
-
+    const handleCartUpdate = () => setCart(getCart());
+    const handleFavoritesUpdate = () => setFavorites(getFavorites());
+    window.addEventListener("cartUpdated", handleCartUpdate);
+    window.addEventListener("favoritesUpdated", handleFavoritesUpdate);
     return () => {
-      window.removeEventListener("productsUpdated", handleDataUpdate)
-      window.removeEventListener("cartUpdated", handleDataUpdate)
-      window.removeEventListener("favoritesUpdated", handleDataUpdate)
-    }
-  }, [productId])
+      window.removeEventListener("cartUpdated", handleCartUpdate);
+      window.removeEventListener("favoritesUpdated", handleFavoritesUpdate);
+    };
+  }, [productId]);
 
   const addToCart = (product: Product) => {
     if (!product.inStock) {
@@ -159,9 +156,9 @@ export default function ProductDetailPage() {
               <Image
                 src={mainImage || "/placeholder.svg"}
                 alt={product.name}
-                width={600}
+                width={400}
                 height={400}
-                className="w-full h-auto object-contain rounded-lg"
+                className="w-[400px] h-[400px] object-contain rounded-lg mx-auto"
               />
               {product.badge && <Badge className="absolute top-2 right-2 bg-red-500">{product.badge}</Badge>}
               {!product.inStock && (
@@ -171,26 +168,21 @@ export default function ProductDetailPage() {
               )}
             </div>
             <div className="flex space-x-2 overflow-x-auto pb-2">
-              {(product.images || []).map((img, index) => (
+              {product.image && (
                 <div
-                  key={index}
-                  className={`relative w-24 h-24 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden border-2 ${
-                    mainImage === img ? "border-blue-500" : "border-transparent"
-                  }`}
-                  onClick={() => setMainImage(img)}
+                  className={`relative w-24 h-24 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden border-2 ${mainImage === product.image ? "border-blue-500" : "border-transparent"}`}
+                  onClick={() => setMainImage(product.image)}
                 >
                   <Image
-                    src={img}
-                    alt={`${product.name} - ${index + 1}`}
+                    src={product.image}
+                    alt={product.name}
                     width={96}
                     height={96}
-                    className="w-full h-full object-cover"
-                  />
+                    className="w-[96px] h-[96px] object-cover" />
                 </div>
-              ))}
+              )}
             </div>
           </div>
-
           <div className="lg:w-1/2 p-6">
             <div className="text-sm text-gray-500 mb-1">
               {product.category} {product.subcategory && `- ${product.subcategory}`}
@@ -221,13 +213,7 @@ export default function ProductDetailPage() {
                 <ShoppingCart className="h-5 w-5 ml-2" />
                 {product.inStock ? "أضف للسلة" : "غير متوفر"}
               </Button>
-              <Button
-                variant={favorites.includes(product.id) ? "default" : "outline"}
-                className="py-3 px-4"
-                onClick={() => toggleFavorite(product.id)}
-              >
-                <Heart className={`h-5 w-5 ${favorites.includes(product.id) ? "fill-current" : ""}`} />
-              </Button>
+
             </div>
           </div>
         </Card>

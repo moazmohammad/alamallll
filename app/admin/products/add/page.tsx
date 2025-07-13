@@ -13,14 +13,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BookOpen, ArrowLeft, Save, Upload, X, ImageIcon } from "lucide-react"
 import Link from "next/link"
 import { getProducts, saveProducts, getCategories, type Product } from "@/lib/store"
+
+
+import { db } from "@/lib/firebase"
+import { doc, setDoc } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
+import { getMenus, MenuItem } from "@/lib/menus"
 
 export default function AddProduct() {
   const router = useRouter()
   const { toast } = useToast()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [categories, setCategories] = useState(getCategories())
+  const [categories, setCategories] = useState<{ id: number; name: string; subcategories: string[] }[]>([])
   const [images, setImages] = useState<string[]>([])
   const [formData, setFormData] = useState({
     name: "",
@@ -30,7 +35,7 @@ export default function AddProduct() {
     category: "",
     subcategory: "",
     stock: "",
-    rating: "4.5",
+    rating: "",
   })
 
   useEffect(() => {
@@ -39,6 +44,20 @@ export default function AddProduct() {
       router.push("/admin")
     } else {
       setIsAuthenticated(true)
+      // Fetch categories from Firestore menus
+      getMenus().then((menus: MenuItem[]) => {
+        // Only top-level menus (no parentId)
+        const cats = menus
+          .filter((menu) => !menu.parentId)
+          .map((menu) => ({
+            id: menu.id,
+            name: menu.name,
+            subcategories: menus
+              .filter((sub) => sub.parentId === menu.id)
+              .map((sub) => sub.name),
+          }))
+        setCategories(cats)
+      })
     }
   }, [router])
 
@@ -62,31 +81,53 @@ export default function AddProduct() {
     setImages((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const products = getProducts()
     const newId = Math.max(...products.map((p) => p.id), 0) + 1
 
+
+    // Build product object, omitting undefined fields
     const newProduct: Product = {
       id: newId,
       name: formData.name,
       description: formData.description,
       price: Number.parseFloat(formData.price),
-      originalPrice: formData.originalPrice ? Number.parseFloat(formData.originalPrice) : undefined,
       category: formData.category,
-      subcategory: formData.subcategory || undefined,
       stock: Number.parseInt(formData.stock),
       image: images[0] || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=400&fit=crop",
-      images: images.length > 0 ? images : undefined,
       rating: Number.parseFloat(formData.rating),
       inStock: Number.parseInt(formData.stock) > 0,
       reviews: 0,
       sales: 0,
+    };
+    // Add optional fields only if they have values
+    if (formData.originalPrice && formData.originalPrice.trim() !== "") {
+      (newProduct as any).originalPrice = Number.parseFloat(formData.originalPrice);
+    }
+    if (images.length > 0) {
+      (newProduct as any).images = images;
+    }
+    if (formData.subcategory && formData.subcategory.trim() !== "") {
+      (newProduct as any).subcategory = formData.subcategory;
     }
 
     const updatedProducts = [...products, newProduct]
     saveProducts(updatedProducts)
+
+    // Post to Firestore
+    try {
+      await setDoc(doc(db, "products", newProduct.id.toString()), newProduct)
+    } catch (error) {
+      console.error("Failed to save product to Firestore:", error)
+      toast({
+        title: "خطأ في الحفظ",
+        description: "حدث خطأ أثناء حفظ المنتج في قاعدة البيانات السحابية.",
+        variant: "destructive",
+      })
+      return
+    }
 
     toast({
       title: "تم بنجاح ✅",
