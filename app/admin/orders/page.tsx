@@ -17,15 +17,20 @@ import {
 } from "@/components/ui/dialog"
 import { BookOpen, Search, ArrowLeft, Eye, Edit, Phone } from "lucide-react"
 import Link from "next/link"
-import { getOrders, saveOrders, type Order } from "@/lib/store"
+import { getOrders, type Order } from "@/lib/orders"
+import { collection, doc, updateDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
+import { useToast } from "@/hooks/use-toast"
 
 export default function AdminOrders() {
   const router = useRouter()
+  const { toast } = useToast()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("الكل")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const loggedIn = localStorage.getItem("adminLoggedIn")
@@ -33,27 +38,74 @@ export default function AdminOrders() {
       router.push("/admin")
     } else {
       setIsAuthenticated(true)
-      setOrders(getOrders())
+      fetchOrders()
     }
   }, [router])
 
-  const updateOrderStatus = (orderId: string, newStatus: string) => {
-    const updatedOrders = orders.map((order) => (order.id === orderId ? { ...order, status: newStatus } : order))
-    setOrders(updatedOrders)
-    saveOrders(updatedOrders)
-    alert("تم تحديث حالة الطلب بنجاح!")
+  const fetchOrders = async () => {
+    try {
+      setIsLoading(true)
+      const ordersData = await getOrders()
+      setOrders(ordersData)
+    } catch (error) {
+      console.error("Error fetching orders:", error)
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء جلب الطلبات",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId)
+      await updateDoc(orderRef, { status: newStatus })
+      
+      // تحديث حالة الطلب في الواجهة
+      const updatedOrders = orders.map((order) => 
+        order.id === orderId ? { ...order, status: newStatus } : order
+      )
+      setOrders(updatedOrders)
+      
+      toast({
+        title: "تم التحديث",
+        description: "تم تحديث حالة الطلب بنجاح",
+        variant: "success",
+      })
+    } catch (error) {
+      console.error("Error updating order status:", error)
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء تحديث حالة الطلب",
+        variant: "destructive",
+      })
+    }
   }
 
   const filteredOrders = orders.filter((order) => {
     const matchesSearch =
       order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.id.toLowerCase().includes(searchTerm.toLowerCase())
+      (order.id && order.id.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === "الكل" || order.status === statusFilter
     return matchesSearch && matchesStatus
   })
 
   if (!isAuthenticated) {
     return <div>جاري التحميل...</div>
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">جاري تحميل الطلبات...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -138,7 +190,10 @@ export default function AdminOrders() {
                     </TableCell>
                     <TableCell className="font-medium">{order.total} ج.م</TableCell>
                     <TableCell>
-                      <Select value={order.status} onValueChange={(value) => updateOrderStatus(order.id, value)}>
+                      <Select 
+                        value={order.status} 
+                        onValueChange={(value) => order.id && updateOrderStatus(order.id, value)}
+                      >
                         <SelectTrigger className="w-32">
                           <SelectValue />
                         </SelectTrigger>

@@ -13,27 +13,35 @@ import { ShoppingCart, Star, Search, BookOpen, Heart, Filter, SlidersHorizontal,
 import Link from "next/link"
 import Image from "next/image"
 import { useSearchParams } from "next/navigation"
-import {
-  getProducts,
-  getCart,
-  saveCart,
-  getFavorites,
-  saveFavorites,
-  getCategories,
-  type Product,
-  type CartItem,
-} from "@/lib/store"
+import { getCart, saveCart, getFavorites, saveFavorites } from "@/lib/store"
+import { type Product } from "@/lib/products"
+import { toast } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
-// تحديث دالة addToCart لاستخدام Toast
-import { useToast } from "@/hooks/use-toast"
+// تعريف أنواع البيانات
+interface StoreCartItem {
+  id: number;
+  name: string;
+  price: number;
+  image: string;
+  quantity: number;
+}
+
+interface FirestoreCartItem {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  quantity: number;
+}
 
 export default function ProductsPage() {
   const searchParams = useSearchParams()
   const categoryParam = searchParams.get("category")
 
   const [products, setProducts] = useState<Product[]>([])
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [favorites, setFavorites] = useState<number[]>([])
+  const [cart, setCart] = useState<FirestoreCartItem[]>([])
+  const [favorites, setFavorites] = useState<string[]>([])
   const [categories, setCategories] = useState<{ name: string; subcategories: string[] }[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState(categoryParam || "الكل")
@@ -44,97 +52,127 @@ export default function ProductsPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [inStockOnly, setInStockOnly] = useState(false)
 
-  // في بداية المكون
-  const { toast } = useToast()
-
   useEffect(() => {
-    // Fetch products and menus from Firestore
     const fetchData = async () => {
-      // Dynamic imports to avoid SSR issues
-      const [{ getProductsFromFirestore }, { getMenus, MenuItem }] = await Promise.all([
-        import("@/lib/menus")
-      ]);
-      const firestoreProducts = await getProductsFromFirestore();
-      setProducts(firestoreProducts);
+      try {
+        const [productsModule, menusModule] = await Promise.all([
+          import("@/lib/products"),
+          import("@/lib/menus")
+        ]);
+        
+        const firestoreProducts = await productsModule.getProductsFromFirestore();
+        setProducts(firestoreProducts);
 
-      const menus: typeof MenuItem[] = await getMenus();
-      // Only top-level menus (no parentId)
-      const cats = menus
-        .filter(menu => !menu.parentId)
-        .map(menu => ({
-          name: menu.name,
-          subcategories: Array.isArray(menu.subcategories)
-            ? menu.subcategories
-            : menus.filter(sub => sub.parentId === menu.id).map(sub => sub.name),
-        }));
-      setCategories(cats);
+        const menus = await menusModule.getMenus();
+        const cats = menus
+          .filter(menu => !menu.parentId)
+          .map(menu => ({
+            name: menu.name,
+            subcategories: menus
+              .filter(sub => sub.parentId === menu.id)
+              .map(sub => sub.name)
+          }));
+        setCategories(cats);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        toast.error("حدث خطأ أثناء جلب البيانات")
+      }
     };
+    
     fetchData();
+    
+    // تحويل المفضلة المخزنة من أرقام إلى نصوص
+    const storedFavorites = getFavorites();
+    setFavorites(storedFavorites.map(id => id.toString()));
+    
+    // تحويل السلة المخزنة
+    const storedCart = getCart();
+    setCart(storedCart.map(item => ({
+      ...item,
+      id: item.id.toString()
+    })));
 
-    setCart(getCart());
-    setFavorites(getFavorites());
-
-    const handleCartUpdate = () => setCart(getCart());
+    const handleCartUpdate = () => {
+      const updatedCart = getCart();
+      setCart(updatedCart.map(item => ({
+        ...item,
+        id: item.id.toString()
+      })));
+    };
+    
     window.addEventListener("cartUpdated", handleCartUpdate);
     return () => {
       window.removeEventListener("cartUpdated", handleCartUpdate);
     };
   }, []);
 
-  // استبدال دالة addToCart
-  const addToCart = (product: Product) => {
+  const addToCart = (e: React.MouseEvent, product: Product) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!product.inStock) {
-      toast({
-        title: "غير متوفر",
-        description: "هذا المنتج غير متوفر حالياً",
-        variant: "destructive",
-      })
-      return
+      toast.error("هذا المنتج غير متوفر حالياً", {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        rtl: true
+      });
+      return;
     }
 
-    const existingItem = cart.find((item) => item.id === product.id)
-    let newCart: CartItem[]
+    const existingItem = cart.find((item) => item.id === product.id.toString())
+    let newCart: FirestoreCartItem[]
 
     if (existingItem) {
-      newCart = cart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item))
+      newCart = cart.map((item) => 
+        item.id === product.id.toString() 
+          ? { ...item, quantity: item.quantity + 1 } 
+          : item
+      )
     } else {
       newCart = [
         ...cart,
         {
-          id: product.id,
+          id: product.id.toString(),
           name: product.name,
           price: product.price,
-          image: product.image,
+          image: product.image || "/placeholder.svg",
           quantity: 1,
         },
       ]
     }
 
     setCart(newCart)
-    saveCart(newCart)
+    const cartForStorage: StoreCartItem[] = newCart.map(item => ({
+      ...item,
+      id: parseInt(item.id)
+    }));
+    saveCart(cartForStorage)
 
-    toast({
-      title: "تم الإضافة ✅",
-      description: `تم إضافة ${product.name} إلى السلة بنجاح`,
-      variant: "success",
-    })
+    toast.success(`تم إضافة ${product.name} إلى السلة بنجاح`, {
+      position: "top-right",
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      rtl: true
+    });
   }
 
-  const toggleFavorite = (productId: number) => {
+  const toggleFavorite = (productId: string) => {
     const newFavorites = favorites.includes(productId)
       ? favorites.filter((id) => id !== productId)
       : [...favorites, productId]
 
     setFavorites(newFavorites)
-    saveFavorites(newFavorites)
+    saveFavorites(newFavorites.map(id => parseInt(id))) // تحويل النصوص إلى أرقام عند الحفظ
   }
 
-  // Filter and sort products
   const filteredProducts = useMemo(() => {
     const filtered = products.filter((product) => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchTerm.toLowerCase())
+        (product.description?.toLowerCase() || "").includes(searchTerm.toLowerCase())
       const matchesCategory = selectedCategory === "الكل" || product.category === selectedCategory
       const matchesSubcategory = selectedSubcategory === "الكل" || product.subcategory === selectedSubcategory
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1]
@@ -142,6 +180,7 @@ export default function ProductsPage() {
 
       return matchesSearch && matchesCategory && matchesSubcategory && matchesPrice && matchesStock
     })
+
 
     // Sort products
     switch (sortBy) {
@@ -152,13 +191,13 @@ export default function ProductsPage() {
         filtered.sort((a, b) => b.price - a.price)
         break
       case "التقييم":
-        filtered.sort((a, b) => b.rating - a.rating)
+        filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0))
         break
       case "الأكثر مبيعاً":
         filtered.sort((a, b) => (b.sales || 0) - (a.sales || 0))
         break
       default:
-        // الأحدث
+        // الأحدث - نحتفظ بالترتيب الحالي
         break
     }
 
@@ -285,6 +324,7 @@ export default function ProductsPage() {
                   <Label htmlFor="inStock" className="text-sm cursor-pointer">
                     المتوفر فقط
                   </Label>
+                  
                 </div>
               </CardContent>
             </Card>
@@ -400,7 +440,7 @@ export default function ProductsPage() {
                           className="flex-1 bg-green-600 hover:bg-green-700"
                           size="sm"
                           disabled={!product.inStock}
-                          onClick={() => addToCart(product)}
+                          onClick={(e) => addToCart(e , product)}
                         >
                           <ShoppingCart className="h-4 w-4 ml-2" />
                           {product.inStock ? "أضف للسلة" : "غير متوفر"}

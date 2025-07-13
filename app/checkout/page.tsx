@@ -14,6 +14,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { getCoupons, getCart, saveCart, type Coupon, type CartItem } from "@/lib/store"
 import { useToast } from "@/hooks/use-toast"
+import { addOrderToFirestore } from "@/lib/orders"
 import Image from "next/image"
 
 export default function CheckoutPage() {
@@ -108,7 +109,7 @@ export default function CheckoutPage() {
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (cart.length === 0) {
@@ -120,40 +121,45 @@ export default function CheckoutPage() {
       return
     }
 
-    // إنشاء الطلب
-    const order = {
-      id: `#${Date.now()}`,
-      customer: formData.name,
-      phone: formData.phone,
-      address: formData.address,
-      items: cart,
-      subtotal: subtotal,
-      shipping: shipping,
-      discount: discount,
-      total: total,
-      paymentMethod: formData.paymentMethod,
-      status: "جديد",
-      date: new Date().toISOString().split("T")[0],
-      notes: formData.notes,
-      coupon: appliedCoupon?.code,
+    try {
+      // إنشاء الطلب وإضافته إلى Firestore
+      const order = {
+        customer: formData.name,
+        phone: formData.phone,
+        address: formData.address,
+        items: cart,
+        subtotal: subtotal,
+        shipping: shipping,
+        discount: discount,
+        total: total,
+        paymentMethod: formData.paymentMethod,
+        status: "جديد",
+        date: new Date().toISOString().split("T")[0],
+        notes: formData.notes,
+        coupon: appliedCoupon?.code,
+      }
+
+      await addOrderToFirestore(order)
+
+      // مسح السلة
+      setCart([])
+      saveCart([])
+
+      toast({
+        title: "تم إرسال الطلب ✅",
+        description: "تم إرسال طلبك بنجاح! سيتم التواصل معك قريباً",
+        variant: "success",
+      })
+
+      router.push("/")
+    } catch (error) {
+      console.error("Error creating order:", error)
+      toast({
+        title: "حدث خطأ",
+        description: "حدث خطأ أثناء إرسال الطلب. يرجى المحاولة مرة أخرى.",
+        variant: "destructive",
+      })
     }
-
-    // حفظ الطلب في localStorage
-    const existingOrders = JSON.parse(localStorage.getItem("orders") || "[]")
-    existingOrders.push(order)
-    localStorage.setItem("orders", JSON.stringify(existingOrders))
-
-    // مسح السلة
-    setCart([])
-    saveCart([])
-
-    toast({
-      title: "تم إرسال الطلب ✅",
-      description: "تم إرسال طلبك بنجاح! سيتم التواصل معك قريباً",
-      variant: "success",
-    })
-
-    router.push("/")
   }
 
   const handleChange = (field: string, value: string) => {
@@ -214,77 +220,67 @@ export default function CheckoutPage() {
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">الاسم الكامل *</Label>
+                    <Label htmlFor="name">الاسم</Label>
                     <Input
                       id="name"
+                      type="text"
+                      required
+                      placeholder="الاسم بالكامل"
                       value={formData.name}
                       onChange={(e) => handleChange("name", e.target.value)}
-                      className="text-right"
-                      required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="phone">رقم الهاتف *</Label>
+                    <Label htmlFor="phone">رقم الهاتف</Label>
                     <Input
                       id="phone"
                       type="tel"
+                      required
+                      placeholder="01xxxxxxxxx"
                       value={formData.phone}
                       onChange={(e) => handleChange("phone", e.target.value)}
-                      className="text-right"
-                      placeholder="01xxxxxxxxx"
-                      required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="address">العنوان بالتفصيل *</Label>
+                    <Label htmlFor="address">العنوان بالتفصيل</Label>
                     <Textarea
                       id="address"
+                      required
+                      placeholder="العنوان بالتفصيل مع ذكر المنطقة والمدينة"
                       value={formData.address}
                       onChange={(e) => handleChange("address", e.target.value)}
-                      className="text-right"
-                      placeholder="المحافظة - المدينة - الشارع - رقم المنزل"
-                      required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="notes">ملاحظات إضافية</Label>
+                    <Label htmlFor="notes">ملاحظات إضافية (اختياري)</Label>
                     <Textarea
                       id="notes"
+                      placeholder="أي ملاحظات إضافية خاصة بالطلب"
                       value={formData.notes}
                       onChange={(e) => handleChange("notes", e.target.value)}
-                      className="text-right"
-                      placeholder="أي ملاحظات خاصة بالطلب..."
                     />
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <Label>طريقة الدفع</Label>
                     <RadioGroup
                       value={formData.paymentMethod}
                       onValueChange={(value) => handleChange("paymentMethod", value)}
+                      className="flex flex-col space-y-2"
                     >
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="cash_on_delivery" id="cash" />
-                        <Label htmlFor="cash" className="flex items-center cursor-pointer">
-                          <Truck className="h-4 w-4 ml-2" />
-                          الدفع عند الاستلام
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2 opacity-50">
-                        <RadioGroupItem value="online" id="online" disabled />
-                        <Label htmlFor="online" className="flex items-center cursor-not-allowed">
-                          <CreditCard className="h-4 w-4 ml-2" />
-                          الدفع الإلكتروني (قريباً)
-                        </Label>
+                        <RadioGroupItem value="cash_on_delivery" id="cod" />
+                        <Label htmlFor="cod">الدفع عند الاستلام</Label>
                       </div>
                     </RadioGroup>
                   </div>
 
-                  <Button type="submit" className="w-full" size="lg">
-                    تأكيد الطلب ({total} ج.م)
+                  <Button type="submit" className="w-full">
+                    <ShoppingCart className="h-4 w-4 ml-2" />
+                    إتمام الطلب
                   </Button>
                 </form>
               </CardContent>
