@@ -237,6 +237,7 @@ export function saveOrders(orders: Order[]): void {
 // دوال الفئات
 export function getCategories(): Category[] {
   if (cachedCategories) return cachedCategories
+  // Always return an array, never null
   
   if (typeof window === "undefined") {
     // فئات افتراضية للخادم
@@ -263,8 +264,8 @@ export function getCategories(): Category[] {
   
   const localCategories = typeof window !== "undefined" ? localStorage.getItem("categories") : null
   if (localCategories) {
-    cachedCategories = JSON.parse(localCategories)
-    return cachedCategories
+    return cachedCategories ?? []
+    return cachedCategories ?? []
   }
   
   // فئات افتراضية
@@ -404,15 +405,15 @@ export function saveUsers(users: User[]): void {
 // دوال الكوبونات
 export function getCoupons(): Coupon[] {
   if (cachedCoupons) return cachedCoupons
-  
+
   if (typeof window === "undefined") return []
-  
+
   const localCoupons = typeof window !== "undefined" ? localStorage.getItem("coupons") : null
   if (localCoupons) {
     cachedCoupons = JSON.parse(localCoupons)
-    return cachedCoupons
+    return cachedCoupons ?? []
   }
-  
+
   return []
 }
 

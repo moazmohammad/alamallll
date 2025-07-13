@@ -52,7 +52,6 @@ export default function ProductsPage() {
     const fetchData = async () => {
       // Dynamic imports to avoid SSR issues
       const [{ getProductsFromFirestore }, { getMenus, MenuItem }] = await Promise.all([
-        import("@/lib/products"),
         import("@/lib/menus")
       ]);
       const firestoreProducts = await getProductsFromFirestore();
@@ -278,7 +277,11 @@ export default function ProductsPage() {
 
                 {/* Stock Filter */}
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="inStock" checked={inStockOnly} onCheckedChange={setInStockOnly} />
+                  <Checkbox
+                    id="inStock"
+                    checked={inStockOnly}
+                    onCheckedChange={checked => setInStockOnly(checked === true)}
+                  />
                   <Label htmlFor="inStock" className="text-sm cursor-pointer">
                     المتوفر فقط
                   </Label>

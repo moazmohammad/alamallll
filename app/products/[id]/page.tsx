@@ -83,7 +83,7 @@ export default function ProductDetailPage() {
           id: product.id,
           name: product.name,
           price: product.price,
-          image: product.image,
+          image: product.image || "",
           quantity: 1,
         },
       ]
